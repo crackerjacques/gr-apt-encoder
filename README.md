@@ -5,7 +5,7 @@ generate NOAA APT Signal.
 
 APT-ENCODER - working tentatively.
 
-Doppler Simlator - Working but needs to be improvement and debug. Only the GUI.
+Doppler Simlator - Only the GUI works decently, but still needs improvement and debugging.
 
 
 ```

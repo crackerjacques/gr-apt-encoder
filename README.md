@@ -19,4 +19,8 @@ sudo make install
 sudo ldconfig
 ```
 
+# HOWTO
+
+feed 909 x n pixel 24 bit TGA file.
+
 ![2024-12-11_03-42-35](https://github.com/user-attachments/assets/3b0338c9-23c3-422a-a74f-3ab5ddff3ff3)

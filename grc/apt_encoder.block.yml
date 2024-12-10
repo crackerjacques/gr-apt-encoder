@@ -1,0 +1,65 @@
+id: apt_encoder
+label: APT Encoder
+category: '[APT Encoder]'
+flags: [python, cpp]
+
+parameters:
+-   id: image_file
+    label: Primary Image File
+    dtype: file_open
+    default: ''
+-   id: second_file
+    label: Secondary Image File
+    dtype: file_open
+    hide: ${ 'none' if second_file else 'part' }
+    default: ''
+-   id: sample_rate
+    label: Sample Rate
+    dtype: float
+    default: '24000'
+-   id: carrier_freq
+    label: Carrier Frequency
+    dtype: float
+    default: '2400'
+-   id: repeat_mode
+    label: Repeat Mode
+    dtype: bool
+    default: 'False'
+    options: ['True', 'False']
+    option_labels: [Yes, No]
+-   id: mode
+    label: Channel B Mode
+    dtype: enum
+    options: ["'R'", "'G'", "'B'", "'N'", "'Y'", "'C'"]
+    option_labels: [Red, Green, Blue, Negative, Y Signal, Color]
+    default: "'N'"
+
+outputs:
+-   domain: stream
+    dtype: float
+    vlen: 1
+    optional: false
+-   domain: message
+    id: duration
+    optional: true
+-   domain: message
+    id: samples
+    optional: true
+-   domain: message
+    id: path_length
+    optional: true
+
+templates:
+    imports: import gnuradio.apt_encoder
+    make: gnuradio.apt_encoder.encoder.make(${image_file}, ${second_file}, ${sample_rate}, ${carrier_freq}, ${repeat_mode}, ${mode})
+    callbacks:
+    - reset()
+
+documentation: |-
+    APT signal encoder for weather satellite images.
+    
+    Outputs message ports:
+    - duration: Signal duration in seconds
+    - samples: Total number of samples to be generated
+
+file_format: 1

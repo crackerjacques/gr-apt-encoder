@@ -1,0 +1,83 @@
+id: apt_encoder_doppler_simulator
+label: APT Doppler Simulator
+category: '[APT Encoder]'
+
+parameters:
+-   id: sample_rate
+    label: Sample Rate
+    dtype: float
+    default: '24000'
+-   id: center_freq
+    label: Center Frequency
+    dtype: float
+    default: '2400'
+-   id: range_km
+    label: Range (km)
+    dtype: float
+    default: '1000'
+-   id: sat_velocity
+    label: Satellite Velocity (km/s)
+    dtype: float
+    default: '7.8'
+-   id: auto_trim
+    label: Auto Trim Signal
+    dtype: bool
+    default: 'True'
+    options: ['True', 'False']
+    option_labels: [Enabled, Disabled]
+-   id: trim_threshold
+    label: Visibility Threshold (deg)
+    dtype: float
+    default: '20'
+    hide: ${ 'none' if auto_trim else 'all' }
+
+inputs:
+-   domain: stream
+    dtype: float
+    vlen: 1
+    optional: false
+-   domain: message
+    id: duration
+    optional: true
+-   domain: message
+    id: samples
+    optional: true
+-   domain: message
+    id: path_length
+    optional: true
+
+outputs:
+-   domain: stream
+    dtype: float
+    vlen: 1
+    optional: false
+-   domain: message
+    id: sat_pos
+    optional: true
+
+templates:
+    imports: from gnuradio import apt_encoder
+    make: getattr(apt_encoder, 'doppler_simulator').make(${sample_rate}, ${center_freq}, ${range_km}, ${sat_velocity}, ${auto_trim}, ${trim_threshold})
+    callbacks:
+    - set_range(${range_km})
+    - set_velocity(${sat_velocity})
+    - set_auto_trim(${auto_trim})
+
+documentation: |-
+    Simulates Doppler effect for APT satellite pass.
+    
+    Takes audio input from APT Encoder and applies Doppler shift and signal
+    attenuation based on simulated satellite movement.
+    
+    Parameters:
+    * Sample Rate: Must match APT Encoder (typically 24000 Hz)
+    * Center Freq: Carrier frequency from APT Encoder (typically 2400 Hz)
+    * Range: Maximum visibility range in kilometers
+    * Sat Velocity: Satellite velocity (7.8 km/s for LEO)
+    * Auto Trim: Automatically adjust range based on signal length
+    * Visibility Threshold: Minimum elevation angle for signal reception
+    
+    The sat_pos output provides real-time satellite position information
+    including elevation, signal strength, and Doppler shift.
+
+file_format: 1

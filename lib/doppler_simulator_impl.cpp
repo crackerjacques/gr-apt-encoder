@@ -39,13 +39,12 @@ doppler_simulator_impl::doppler_simulator_impl(float sample_rate,
       d_current_doppler(1.0),
       d_current_strength(1.0)
 {
-    // ???????????
+   //Message Ports
     message_port_register_in(pmt::intern("duration"));
     message_port_register_in(pmt::intern("samples"));
     message_port_register_in(pmt::intern("path_length"));
     message_port_register_out(pmt::intern("sat_pos"));
 
-    // ????????????
     set_msg_handler(pmt::intern("duration"),
         [this](const pmt::pmt_t& msg) { this->handle_duration_msg(msg); });
     set_msg_handler(pmt::intern("samples"),

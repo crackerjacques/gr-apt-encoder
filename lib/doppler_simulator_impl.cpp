@@ -122,68 +122,62 @@ double doppler_simulator_impl::calculate_signal_strength(double elevation) const
 
 void doppler_simulator_impl::update_status(double t)
 {
-   double elevation = calculate_elevation(t);
-   d_current_doppler = calculate_doppler_shift(t);
-   d_current_strength = calculate_signal_strength(elevation);
+    // calc dopplershift
+    double elevation_rad = calculate_elevation(t) * PI / 180.0;
+    double los_velocity = d_sat_velocity * std::cos(elevation_rad);
+    
+    d_current_doppler = 1.0 + (los_velocity / LIGHT_SPEED);
+    d_current_strength = calculate_signal_strength(elevation_rad);
 
-   pmt::pmt_t pos_dict = pmt::make_dict();
-   pos_dict = pmt::dict_add(pos_dict, pmt::intern("time"), pmt::from_double(t));
-   pos_dict = pmt::dict_add(pos_dict, pmt::intern("elevation"), pmt::from_double(elevation));
-   pos_dict = pmt::dict_add(pos_dict, pmt::intern("doppler"), pmt::from_double(d_current_doppler));
-   pos_dict = pmt::dict_add(pos_dict, pmt::intern("strength"), pmt::from_double(d_current_strength));
-   
-   message_port_pub(pmt::intern("sat_pos"), pos_dict);
+    pmt::pmt_t pos_dict = pmt::make_dict();
+    pos_dict = pmt::dict_add(pos_dict, pmt::intern("time"), pmt::from_double(t));
+    pos_dict = pmt::dict_add(pos_dict, pmt::intern("elevation"), pmt::from_double(elevation_rad * 180.0 / PI));
+    pos_dict = pmt::dict_add(pos_dict, pmt::intern("doppler"), pmt::from_double(d_current_doppler));
+    pos_dict = pmt::dict_add(pos_dict, pmt::intern("strength"), pmt::from_double(d_current_strength));
+    
+    message_port_pub(pmt::intern("sat_pos"), pos_dict);
 }
 
 int doppler_simulator_impl::work(int noutput_items,
-                              gr_vector_const_void_star &input_items,
-                              gr_vector_void_star &output_items)
+                               gr_vector_const_void_star &input_items,
+                               gr_vector_void_star &output_items)
 {
-   const float *in = (const float *) input_items[0];
-   float *out = (float *) output_items[0];
+    const float *in = (const float *) input_items[0];
+    float *out = (float *) output_items[0];
+    
+    if (!d_params_set) {
+        std::memcpy(out, in, noutput_items * sizeof(float));
+        return noutput_items;
+    }
 
-   if (!d_params_set) {
-       std::memcpy(out, in, noutput_items * sizeof(float));
-       return noutput_items;
-   }
+    // calc time and position
+    for (int i = 0; i < noutput_items; i++) {
+        double t = static_cast<double>(d_processed_samples + i) / d_total_samples;
+        
+        double elevation = calculate_elevation(t);
+        double strength = calculate_signal_strength(elevation);
+        
+        double elevation_rad = elevation * PI / 180.0;
+        double los_velocity = d_sat_velocity * std::cos(elevation_rad);
+        double doppler = 1.0 + (los_velocity / LIGHT_SPEED);
+        
+        // calc doppler
+        float phase_shift = (doppler - 1.0) * d_center_freq * 2.0 * PI * (d_processed_samples + i) / d_sample_rate;
+        float shifted_signal = in[i] * std::cos(phase_shift);
+        
+        out[i] = shifted_signal * strength;
+        
+        // clipping proof
+        out[i] = std::max(-1.0f, std::min(1.0f, out[i]));
 
-   static float dc_sum = 0.0f;
-   static const int DC_WINDOW = 1024;
-   static std::vector<float> dc_buffer(DC_WINDOW, 0.0f);
-   static int dc_index = 0;
-   
-   static float prev_strength = 1.0f;
-   static float prev_doppler = 1.0f;
-
-   for (int i = 0; i < noutput_items; i++) {
-       double t = static_cast<double>(d_processed_samples + i) / d_total_samples;
-       
-       double elevation = calculate_elevation(t);
-       double target_strength = calculate_signal_strength(elevation);
-       double target_doppler = calculate_doppler_shift(t);
-       
-       float strength = prev_strength * 0.9f + target_strength * 0.1f;
-       float doppler = prev_doppler * 0.9f + target_doppler * 0.1f;
-       
-       prev_strength = strength;
-       prev_doppler = doppler;
-       
-       // DC Offset
-       dc_sum -= dc_buffer[dc_index];
-       dc_buffer[dc_index] = in[i];
-       dc_sum += dc_buffer[dc_index];
-       dc_index = (dc_index + 1) % DC_WINDOW;
-       float dc_offset = dc_sum / DC_WINDOW;
-       
-       // final signal
-       float signal = (in[i] - dc_offset) * strength * doppler;
-       out[i] = std::max(-1.0f, std::min(1.0f, signal));
-
-       // refresh
-      if ((d_processed_samples + i) % static_cast<uint64_t>(d_sample_rate / 10) == 0) {
-         update_status(t);
-      }
-   }
+        if ((d_processed_samples + i) % static_cast<uint64_t>(d_sample_rate / 10) == 0) {
+            update_status(t);
+        }
+    }
+    
+    d_processed_samples += noutput_items;
+    return noutput_items;
+}
    
    d_processed_samples += noutput_items;
    

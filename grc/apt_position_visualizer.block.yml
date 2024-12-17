@@ -1,0 +1,56 @@
+id: apt_position_visualizer
+label: APT Position Visualizer
+category: '[APT Encoder]/GUI Widgets'
+flags: [ python, need_qt_gui ]
+
+parameters:
+-   id: map_file
+    label: World Map SVG
+    dtype: file_open
+    default: 'world_map.svg'
+    hide: part
+
+-   id: gui_hint
+    label: GUI Hint
+    dtype: gui_hint
+    hide: part
+    default: ''
+
+inputs:
+-   domain: message
+    id: sat_pos
+    optional: true
+
+templates:
+    imports: |
+        from gnuradio import apt_encoder
+        from PyQt5.QtSvg import QSvgRenderer
+        import os.path
+    make: |
+        self.${id} = apt_encoder.position_visualizer()
+        map_path = os.path.join(os.path.dirname(apt_encoder.__file__), "world_map.svg")
+        self.${id}.svg_renderer = QSvgRenderer(map_path)
+        % if gui_hint:
+        ${gui_hint() % id}
+        % else:
+        self.top_layout.addWidget(self.${id}.get_widget())
+        % endif
+
+documentation: |-
+    APT Satellite Position Visualizer
+
+    Displays real-time satellite position, ground station location, and telemetry data
+    on a world map grid. Provides detailed reception information including Doppler shift
+    and signal strength analysis.
+
+    Features:
+    * Interactive world map with zoom and pan capability
+    * Real-time position tracking
+    * Signal strength and Doppler shift analysis
+    
+    Mouse Controls:
+    * Wheel: Zoom in/out
+    * Left-click drag: Pan map
+    * Mouse hover: Show coordinates
+
+file_format: 1

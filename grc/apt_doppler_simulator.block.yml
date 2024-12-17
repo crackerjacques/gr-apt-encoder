@@ -7,44 +7,104 @@ parameters:
     label: Sample Rate
     dtype: float
     default: '24000'
+    
 -   id: center_freq
     label: Center Frequency
     dtype: float
     default: '2400'
+    
 -   id: range_km
     label: Range (km)
     dtype: float
     default: '1000'
+    
 -   id: sat_velocity
     label: Satellite Velocity (km/s)
     dtype: float
     default: '7.8'
+    
 -   id: auto_trim
     label: Auto Trim Signal
     dtype: bool
     default: 'True'
     options: ['True', 'False']
     option_labels: [Enabled, Disabled]
+    
 -   id: trim_threshold
     label: Visibility Threshold (deg)
     dtype: float
     default: '20'
     hide: ${ 'none' if auto_trim else 'all' }
 
+-   id: antenna_type
+    label: Antenna Type
+    dtype: enum
+    options: ['"OMNI"', '"DIPOLE"', '"DOUBLE_CROSS"', '"QFH"', '"TURNSTILE"']
+    option_labels: [Omnidirectional, Dipole, Double Cross, QFH, Turnstile]
+    default: '"OMNI"'
+    category: Antenna
+
+-   id: antenna_azimuth
+    label: Antenna Azimuth (deg)
+    dtype: float
+    default: '90'
+    category: Antenna
+
+-   id: antenna_elevation
+    label: Antenna Elevation (deg)
+    dtype: float
+    default: '10'
+    category: Antenna
+
+-   id: antenna_lat
+    label: Ground Station Latitude (deg)
+    dtype: float
+    default: '37.81'
+    category: Ground Station
+    
+-   id: antenna_lon
+    label: Ground Station Longitude (deg)
+    dtype: float
+    default: '139.11'
+    category: Ground Station
+    
+-   id: antenna_alt
+    label: Ground Station Altitude (m)
+    dtype: float
+    default: '10'
+    category: Ground Station
+    
+-   id: start_lat
+    label: Start Latitude (deg)
+    dtype: float
+    default: '145.0'
+    category: Orbit
+    
+-   id: start_lon
+    label: Start Longitude (deg)
+    dtype: float
+    default: '50.0'
+    category: Orbit
+    
+-   id: orbital_inclination
+    label: Orbital Inclination (deg)
+    dtype: float
+    default: '118'
+    category: Orbit
+    
+-   id: ascending
+    label: Pass Direction
+    dtype: enum
+    options: ['True', 'False']
+    option_labels: [Ascending, Descending]
+    default: 'True'
+    category: Orbit
+
 inputs:
 -   domain: stream
     dtype: float
     vlen: 1
     optional: false
--   domain: message
-    id: duration
-    optional: true
--   domain: message
-    id: samples
-    optional: true
--   domain: message
-    id: path_length
-    optional: true
 
 outputs:
 -   domain: stream
@@ -56,28 +116,85 @@ outputs:
     optional: true
 
 templates:
-    imports: from gnuradio import apt_encoder
-    make: getattr(apt_encoder, 'doppler_simulator').make(${sample_rate}, ${center_freq}, ${range_km}, ${sat_velocity}, ${auto_trim}, ${trim_threshold})
+    imports: |
+        from gnuradio import apt_encoder
+        import sys
+    make: |
+        print("Initializing APT Doppler Simulator:", file=sys.stderr)
+        print(f"  Ground Station: {${antenna_lat}}°N, {${antenna_lon}}°E, Alt: {${antenna_alt}}m", file=sys.stderr)
+        print(f"  Antenna: Type={${antenna_type}}, Az={${antenna_azimuth}}°, El={${antenna_elevation}}°", file=sys.stderr)
+        print(f"  Orbit: Inc={${orbital_inclination}}°, {'Ascending' if ${ascending} else 'Descending'}", file=sys.stderr)
+        print(f"  Start Position: {${start_lat}}°N, {${start_lon}}°E", file=sys.stderr)
+        block = getattr(apt_encoder, 'doppler_simulator').make(
+            ${sample_rate}, ${center_freq}, ${range_km},
+            ${sat_velocity}, ${auto_trim}, ${trim_threshold},
+            ${antenna_lat}, ${antenna_lon}, ${antenna_alt},
+            ${start_lat}, ${start_lon}, ${orbital_inclination}, ${ascending}
+        )
+        block.set_antenna_type(getattr(apt_encoder.AntennaType, ${antenna_type}))
+        block.set_antenna_orientation(${antenna_azimuth}, ${antenna_elevation})
+        self.${id} = block
+
     callbacks:
-    - set_range(${range_km})
-    - set_velocity(${sat_velocity})
-    - set_auto_trim(${auto_trim})
+    - |
+        print(f"Setting range: {${range_km}} km", file=sys.stderr)
+        self.${id}.set_range(${range_km})
+    - |
+        print(f"Setting velocity: {${sat_velocity}} km/s", file=sys.stderr)
+        self.${id}.set_velocity(${sat_velocity})
+    - |
+        print(f"Setting auto trim: {'enabled' if ${auto_trim} else 'disabled'}", file=sys.stderr)
+        self.${id}.set_auto_trim(${auto_trim})
+    - |
+        print(f"Setting antenna position: {${antenna_lat}}°N, {${antenna_lon}}°E, Alt: {${antenna_alt}}m", file=sys.stderr)
+        self.${id}.set_antenna_position(${antenna_lat}, ${antenna_lon}, ${antenna_alt})
+    - |
+        print(f"Setting antenna type: {${antenna_type}}", file=sys.stderr)
+        self.${id}.set_antenna_type(getattr(apt_encoder.AntennaType, ${antenna_type}))
+    - |
+        print(f"Setting antenna orientation: Az={${antenna_azimuth}}°, El={${antenna_elevation}}°", file=sys.stderr)
+        self.${id}.set_antenna_orientation(${antenna_azimuth}, ${antenna_elevation})
 
 documentation: |-
-    Simulates Doppler effect for APT satellite pass.
+    Simulates Doppler effect and antenna patterns for APT satellite pass.
     
     Takes audio input from APT Encoder and applies Doppler shift and signal
-    attenuation based on simulated satellite movement.
-    
+    attenuation based on simulated satellite movement and antenna characteristics.
+
     Parameters:
     * Sample Rate: Must match APT Encoder (typically 24000 Hz)
     * Center Freq: Carrier frequency from APT Encoder (typically 2400 Hz)
-    * Range: Maximum visibility range in kilometers
-    * Sat Velocity: Satellite velocity (7.8 km/s for LEO)
-    * Auto Trim: Automatically adjust range based on signal length
-    * Visibility Threshold: Minimum elevation angle for signal reception
+    * Range: Maximum visibility range (0-10000 km)
+    * Sat Velocity: Satellite velocity (7.8 km/s typical for LEO)
+    * Auto Trim: Enable signal cutoff below elevation threshold
+    * Visibility Threshold: Minimum elevation angle (0-90°)
     
-    The sat_pos output provides real-time satellite position information
-    including elevation, signal strength, and Doppler shift.
+    Ground Station Parameters:
+    * Latitude: Ground station latitude (-90° to 90°)
+    * Longitude: Ground station longitude (-180° to 180°)
+    * Altitude: Height above sea level (-500m to 9000m)
+    
+    Antenna Parameters:
+    * Type: Antenna radiation pattern model
+    * Azimuth: Antenna pointing direction (-360° to 360° from North)
+    * Elevation: Antenna tilt angle (-90° to 90° from horizontal)
+    
+    Orbit Parameters:
+    * Start Latitude: Initial satellite latitude (-90° to 90°)
+    * Start Longitude: Initial satellite longitude (-180° to 180°)
+    * Orbital Inclination: Satellite orbit inclination (0° to 180°)
+    * Pass Direction: Ascending (South to North) or Descending
+    
+    Message Output (sat_pos):
+    Dictionary containing real-time parameters:
+    * latitude, longitude: Satellite position
+    * elevation, azimuth: Satellite direction from ground station
+    * doppler: Frequency shift factor
+    * strength: Signal strength (0-1)
+    * range: Distance to satellite (km)
+    * velocity: Radial velocity (km/s)
+    * heading: Satellite track direction
+    * antennaLat, antennaLon, antennaAlt: Ground station position
+    * antennaAzimuth, antennaElevation: Antenna pointing
 
 file_format: 1

@@ -1,0 +1,49 @@
+id: apt_encoder_signal_strength_plot
+label: APT Signal Strength Plot
+category: '[APT Encoder]/GUI Widgets'
+flags: [ python ]
+
+parameters:
+- id: gui_hint
+  label: GUI Hint
+  dtype: gui_hint
+  hide: part
+  default: ''
+
+- id: window_size
+  label: Window Size
+  dtype: int
+  default: '1000'
+  hide: part
+
+inputs:
+- domain: message
+  id: sat_pos
+  optional: true
+
+templates:
+  imports: from gnuradio import apt_encoder
+  make: |
+    self.${id} = apt_encoder.signal_strength_plot(${window_size})
+    % if gui_hint:
+    ${gui_hint() % id}
+    % else:
+    self.top_layout.addWidget(self.${id}.get_widget())
+    % endif
+
+documentation: |-
+    APT Signal Strength Plotter
+    
+    Displays real-time plots of:
+    - Signal Strength (%)
+    - Doppler Shift (%)
+    - Elevation (degrees)
+    
+    Parameters:
+    - Window Size: Number of data points to display in history
+    
+    The GUI hint can be used to position the widget within the application.
+    The hint is of the form [tab_id@tab_index]: [row, col, row_span, col_span].
+    Both the tab specification and the grid position are optional.
+
+file_format: 1

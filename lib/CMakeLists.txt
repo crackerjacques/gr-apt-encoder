@@ -1,10 +1,10 @@
-# lib/
 add_library(gnuradio-apt-encoder SHARED
     encoder_impl.cpp
     image_handler.cpp
     apt_generator.cpp
     apt_format.cpp
     doppler_simulator_impl.cpp
+    antenna_pattern.cpp
 )
 
 target_include_directories(gnuradio-apt-encoder
@@ -34,5 +34,6 @@ install(FILES
     apt_generator.hpp
     apt_timing.hpp
     image_handler.hpp
+    antenna_pattern.hpp
     DESTINATION include/gnuradio/apt_encoder/impl
 )

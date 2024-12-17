@@ -7,6 +7,7 @@ include(GrVersion)
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 find_package(pybind11 REQUIRED)
+find_package(Qt5 COMPONENTS Core Widgets Svg REQUIRED)
 
 #find_package(ALSA REQUIRED)
 find_package(Threads REQUIRED)
@@ -26,7 +27,11 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/lib
     ${CMAKE_SOURCE_DIR}/include
     ${Gnuradio_INCLUDE_DIRS}
+    ${Qt5Core_INCLUDE_DIRS}
+    ${Qt5Widgets_INCLUDE_DIRS}
+    ${Qt5Svg_INCLUDE_DIRS}
 )
+
 
 add_subdirectory(lib)
 add_subdirectory(include/gnuradio/apt_encoder)

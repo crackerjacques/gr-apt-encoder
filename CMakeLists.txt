@@ -15,6 +15,25 @@ find_package(Python3 COMPONENTS Development)
 find_package(pybind11 REQUIRED)
 find_package(OpenCV REQUIRED)
 
+find_library(LIBSGP4_LIBRARY
+    NAMES sgp4 sgp4s
+    PATHS /usr/local/lib
+    REQUIRED
+)
+
+set(LIBSGP4_INCLUDE_DIR /usr/local/include/libsgp4)
+
+if(NOT LIBSGP4_LIBRARY)
+    message(FATAL_ERROR "libsgp4 library not found")
+endif()
+
+if(NOT IS_DIRECTORY ${LIBSGP4_INCLUDE_DIR})
+    message(FATAL_ERROR "libsgp4 include directory not found")
+endif()
+
+message(STATUS "Found libsgp4: ${LIBSGP4_LIBRARY}")
+message(STATUS "Found libsgp4 include: ${LIBSGP4_INCLUDE_DIR}")
+
 include(GrPlatform)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -30,11 +49,14 @@ include_directories(
     ${Qt5Core_INCLUDE_DIRS}
     ${Qt5Widgets_INCLUDE_DIRS}
     ${Qt5Svg_INCLUDE_DIRS}
+    ${LIBSGP4_INCLUDE_DIR}
 )
+
+enable_testing()
 
 
 add_subdirectory(lib)
 add_subdirectory(include/gnuradio/apt_encoder)
 add_subdirectory(grc)
 add_subdirectory(python)
-
+add_subdirectory(test)

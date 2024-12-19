@@ -5,4 +5,4 @@ install(FILES
     apt_encoder_signal_strength_plot.block.yml
     apt_doppler_simulator_sgp4.block.yml
     DESTINATION share/gnuradio/grc/blocks
-)s
+)

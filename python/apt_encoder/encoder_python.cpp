@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <gnuradio/apt_encoder/doppler_simulator.hpp>
+#include <gnuradio/apt_encoder/doppler_simulator_sgp4.hpp>
 #include <gnuradio/apt_encoder/encoder.hpp>
 
 namespace py = pybind11;
@@ -62,6 +63,68 @@ void bind_doppler_simulator(py::module& m) {
         .def("get_current_velocity", &doppler_simulator::get_current_velocity);
 }
 
+void bind_doppler_simulator_sgp4(py::module& m) {
+    using doppler_simulator_sgp4 = gr::apt_encoder::doppler_simulator_sgp4;
+    
+    py::class_<doppler_simulator_sgp4, gr::sync_block, std::shared_ptr<doppler_simulator_sgp4>>(
+        m, "doppler_simulator_sgp4")
+        .def_static("make", 
+            &doppler_simulator_sgp4::make,
+            py::arg("sample_rate"),
+            py::arg("center_freq"),
+            py::arg("tle_line1"),
+            py::arg("tle_line2"),
+            py::arg("antenna_lat") = 35.0f,
+            py::arg("antenna_lon") = 135.0f,
+            py::arg("antenna_alt") = 0.0f)
+        .def("set_antenna_position", 
+            &doppler_simulator_sgp4::set_antenna_position,
+            py::arg("lat"),
+            py::arg("lon"),
+            py::arg("alt"))
+        .def("set_tle",
+            &doppler_simulator_sgp4::set_tle,
+            py::arg("line1"),
+            py::arg("line2"))
+        .def("set_antenna_type",
+            &doppler_simulator_sgp4::set_antenna_type,
+            py::arg("type"))
+        .def("set_antenna_orientation",
+            &doppler_simulator_sgp4::set_antenna_orientation,
+            py::arg("azimuth"),
+            py::arg("elevation"))
+        .def("set_simulation_time",
+            &doppler_simulator_sgp4::set_simulation_time,
+            py::arg("year"),
+            py::arg("month"),
+            py::arg("day"),
+            py::arg("hour"),
+            py::arg("minute"),
+            py::arg("second"))
+        .def("set_simulation_start_time",
+            &doppler_simulator_sgp4::set_simulation_start_time,
+            py::arg("unix_time"))
+        .def("set_realtime_mode",
+            &doppler_simulator_sgp4::set_realtime_mode,
+            py::arg("enable"))
+        .def("get_simulation_time",
+            &doppler_simulator_sgp4::get_simulation_time)
+        .def_property_readonly("doppler_shift",
+            &doppler_simulator_sgp4::get_doppler_shift)
+        .def_property_readonly("signal_strength",
+            &doppler_simulator_sgp4::get_signal_strength)
+        .def_property_readonly("elevation",
+            &doppler_simulator_sgp4::get_elevation)
+        .def_property_readonly("azimuth",
+            &doppler_simulator_sgp4::get_azimuth)
+        .def_property_readonly("range",
+            &doppler_simulator_sgp4::get_range)
+        .def_property_readonly("velocity",
+            &doppler_simulator_sgp4::get_velocity)
+        .def_property_readonly("heading",
+            &doppler_simulator_sgp4::get_heading);
+}
+
 void bind_encoder(py::module& m) {
     using encoder = gr::apt_encoder::encoder;
     
@@ -87,6 +150,7 @@ PYBIND11_MODULE(encoder_python, m) {
     try {
         bind_antenna_type(m);
         bind_doppler_simulator(m);
+        bind_doppler_simulator_sgp4(m);
         bind_encoder(m);
         
         m.attr("__version__") = "1.1.0";

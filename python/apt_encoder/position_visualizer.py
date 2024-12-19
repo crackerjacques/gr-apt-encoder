@@ -11,13 +11,52 @@ class position_visualizer(gr.sync_block):
     """
     Qt-based satellite position visualizer with SVG map and zoom capabilities
     """
-    def __init__(self):
+    def __init__(self, num_sats=1, sat_names=None):
         gr.sync_block.__init__(self,
             name="position_visualizer",
             in_sig=None,
             out_sig=None)
 
         print("Initializing position_visualizer", file=sys.stderr)
+        
+        # Initialize satellite states
+        self.num_sats = num_sats
+        self.sat_names = sat_names if sat_names else [f"SAT-{i+1}" for i in range(num_sats)]
+        
+        # Create state dictionary for each satellite
+        self.states = {}
+        for i in range(num_sats):
+            # Generate distinct colors using HSV color space
+            hue = (i * 360 / num_sats) % 360
+            color = Qt.QColor.fromHsv(int(hue), 255, 255)
+            self.states[i] = {
+                "name": self.sat_names[i],
+                "latitude": 0.0,
+                "longitude": 0.0,
+                "elevation": 0.0,
+                "azimuth": 0.0,
+                "strength": 0.0,
+                "doppler": 1.0,
+                "heading": 0.0,
+                "range": 0.0,
+                "velocity": 0.0,
+                "color": color
+            }
+
+        # Ground station state
+        self.gs_state = {
+            "antennaLat": 35.0,
+            "antennaLon": 135.0,
+            "antennaAlt": 0.0,
+            "antennaAzimuth": 0.0,
+            "antennaElevation": 0.0,
+        }
+
+        # Register message ports for each satellite
+        for i in range(num_sats):
+            port_name = f"sat_pos{i}" if i > 0 else "sat_pos"
+            self.message_port_register_in(pmt.intern(port_name))
+            self.set_msg_handler(pmt.intern(port_name), lambda msg, idx=i: self.handle_sat_pos(msg, idx))
         
         # GUI setup
         self.widget = Qt.QWidget()
@@ -29,48 +68,61 @@ class position_visualizer(gr.sync_block):
         self.info_layout = Qt.QVBoxLayout(self.info_frame)
         
         # Add title
-        self.title_label = Qt.QLabel("Satellite Position Monitor", self.info_frame)
+        self.title_label = Qt.QLabel("Multi-Satellite Position Monitor", self.info_frame)
         self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         self.info_layout.addWidget(self.title_label)
+
+        # Create satellite info frames
+        self.sat_frames = {}
+        for i in range(num_sats):
+            sat_frame = Qt.QFrame(self.info_frame)
+            sat_frame.setFrameStyle(Qt.QFrame.StyledPanel)
+            sat_layout = Qt.QVBoxLayout(sat_frame)
+            
+            # Set background color with low alpha
+            color = self.states[i]['color']
+            sat_frame.setStyleSheet(f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, 30);")
+            
+            sat_title = Qt.QLabel(f"{self.sat_names[i]} Status", sat_frame)
+            sat_title.setStyleSheet("font-weight: bold;")
+            sat_layout.addWidget(sat_title)
+            
+            self.sat_frames[i] = {
+                'frame': sat_frame,
+                'pos_label': Qt.QLabel("Position: Waiting for data...", sat_frame),
+                'elevation_label': Qt.QLabel("Elevation: --", sat_frame),
+                'azimuth_label': Qt.QLabel("Azimuth: --", sat_frame),
+                'doppler_label': Qt.QLabel("Doppler: --", sat_frame),
+                'range_label': Qt.QLabel("Range: --", sat_frame),
+                'strength_label': Qt.QLabel("Signal: --", sat_frame)
+            }
+            
+            for label in self.sat_frames[i].values():
+                if isinstance(label, Qt.QLabel):
+                    sat_layout.addWidget(label)
+            
+            self.info_layout.addWidget(sat_frame)
         
-        # Create Doppler display frame
-        self.doppler_frame = Qt.QFrame(self.info_frame)
-        self.doppler_frame.setFrameStyle(Qt.QFrame.StyledPanel)
-        self.doppler_layout = Qt.QVBoxLayout(self.doppler_frame)
+        # Ground station info
+        self.gs_frame = Qt.QFrame(self.info_frame)
+        self.gs_frame.setFrameStyle(Qt.QFrame.StyledPanel)
+        self.gs_layout = Qt.QVBoxLayout(self.gs_frame)
         
-        # Detailed Doppler information
-        self.doppler_title = Qt.QLabel("Doppler Shift Analysis", self.doppler_frame)
-        self.doppler_title.setStyleSheet("font-weight: bold;")
-        self.doppler_layout.addWidget(self.doppler_title)
+        self.gs_title = Qt.QLabel("Ground Station", self.gs_frame)
+        self.gs_title.setStyleSheet("font-weight: bold;")
+        self.gs_layout.addWidget(self.gs_title)
         
-        self.doppler_label = Qt.QLabel("Raw Shift: --", self.doppler_frame)
-        self.doppler_pct_label = Qt.QLabel("Percentage: --", self.doppler_frame)
-        self.doppler_hz_label = Qt.QLabel("Frequency Offset: --", self.doppler_frame)
+        self.gs_pos_label = Qt.QLabel("Position: Waiting for data...", self.gs_frame)
+        self.gs_alt_label = Qt.QLabel("Altitude: --", self.gs_frame)
+        self.gs_az_label = Qt.QLabel("Azimuth: --", self.gs_frame)
+        self.gs_el_label = Qt.QLabel("Elevation: --", self.gs_frame)
         
-        self.doppler_layout.addWidget(self.doppler_label)
-        self.doppler_layout.addWidget(self.doppler_pct_label)
-        self.doppler_layout.addWidget(self.doppler_hz_label)
+        self.gs_layout.addWidget(self.gs_pos_label)
+        self.gs_layout.addWidget(self.gs_alt_label)
+        self.gs_layout.addWidget(self.gs_az_label)
+        self.gs_layout.addWidget(self.gs_el_label)
         
-        self.info_layout.addWidget(self.doppler_frame)
-        
-        # Position and signal information
-        self.sat_pos_label = Qt.QLabel("Satellite Position: Waiting for data...", self.info_frame)
-        self.gs_pos_label = Qt.QLabel("Ground Station: 35.0°N, 135.0°E", self.info_frame)
-        self.gs_alt_label = Qt.QLabel("Ground Station Altitude: 0m", self.info_frame)
-        self.signal_label = Qt.QLabel("Signal Strength: --", self.info_frame)
-        self.elevation_label = Qt.QLabel("Elevation: --", self.info_frame)
-        self.azimuth_label = Qt.QLabel("Azimuth: --", self.info_frame)
-        self.distance_label = Qt.QLabel("Distance: --", self.info_frame)
-        self.velocity_label = Qt.QLabel("Radial Velocity: --", self.info_frame)
-        
-        self.info_layout.addWidget(self.sat_pos_label)
-        self.info_layout.addWidget(self.gs_pos_label)
-        self.info_layout.addWidget(self.gs_alt_label)
-        self.info_layout.addWidget(self.signal_label)
-        self.info_layout.addWidget(self.elevation_label)
-        self.info_layout.addWidget(self.azimuth_label)
-        self.info_layout.addWidget(self.distance_label)
-        self.info_layout.addWidget(self.velocity_label)
+        self.info_layout.addWidget(self.gs_frame)
         
         # Status indicator
         self.status_label = Qt.QLabel("Status: Initializing", self.info_frame)
@@ -113,49 +165,21 @@ class position_visualizer(gr.sync_block):
         self.update_timer = Qt.QTimer()
         self.update_timer.timeout.connect(self._process_update)
         self.update_timer.start(16)  # ~60fps
-        
-        # Message port setup
-        self.message_port_register_in(pmt.intern("sat_pos"))
-        self.set_msg_handler(pmt.intern("sat_pos"), self.handle_sat_pos)
-        
-        # Initialize state
-        self.state = {
-            "latitude": 0.0,
-            "longitude": 0.0,
-            "antennaLat": 35.0,
-            "antennaLon": 135.0,
-            "antennaAlt": 0.0,
-            "elevation": 0.0,
-            "azimuth": 0.0,
-            "strength": 0.0,
-            "doppler": 1.0,
-            "antennaAzimuth": 0.0,
-            "antennaElevation": 0.0,
-            "heading": 0.0,
-            "range": 0.0,
-            "velocity": 0.0,
-        }
-        
-        print(f"Initial state: {self.state}", file=sys.stderr)
 
     def handle_wheel(self, event):
         """Handle mouse wheel for zooming"""
         mouse_pos = event.pos()
         zoom_factor = 1.1 if event.angleDelta().y() > 0 else 1/1.1
         
-        # Get old position under mouse in world coordinates
         old_world_x = (mouse_pos.x() - self.pan_x) / self.zoom_level
         old_world_y = (mouse_pos.y() - self.pan_y) / self.zoom_level
         
-        # Update zoom level
         self.zoom_level *= zoom_factor
         self.zoom_level = max(0.5, min(10.0, self.zoom_level))
         
-        # Get new position under mouse and adjust pan
         new_world_x = (mouse_pos.x() - self.pan_x) / self.zoom_level
         new_world_y = (mouse_pos.y() - self.pan_y) / self.zoom_level
         
-        # Adjust pan to keep mouse position fixed
         self.pan_x += (new_world_x - old_world_x) * self.zoom_level
         self.pan_y += (new_world_y - old_world_y) * self.zoom_level
         
@@ -181,7 +205,6 @@ class position_visualizer(gr.sync_block):
             self.last_mouse_pos = event.pos()
             self.grid_frame.update()
         
-        # Display coordinates under cursor
         width = self.grid_frame.width()
         height = self.grid_frame.height()
         mouse_x = (event.pos().x() - self.pan_x) / self.zoom_level
@@ -192,7 +215,7 @@ class position_visualizer(gr.sync_block):
         
         self.status_label.setText(f"Position: {lat:.2f}°N, {lon:.2f}°E")
 
-    def handle_sat_pos(self, msg):
+    def handle_sat_pos(self, msg, sat_idx):
         """Message handler for satellite position updates"""
         try:
             if not pmt.is_dict(msg):
@@ -207,23 +230,22 @@ class position_visualizer(gr.sync_block):
                     if pmt.is_number(value):
                         data[key_str] = pmt.to_double(value)
 
-            # Debug print for antenna orientation
-            print(f"Received data: {data}", file=sys.stderr)
-
-            # Update state with all received data
-            for key in ["latitude", "longitude", "elevation", "azimuth", 
-                       "strength", "doppler", "antennaLat", "antennaLon", 
-                       "antennaAlt", "antennaAzimuth", "antennaElevation",
-                       "heading", "range", "velocity"]:
+            # Update ground station data if present
+            for key in ["antennaLat", "antennaLon", "antennaAlt", 
+                       "antennaAzimuth", "antennaElevation"]:
                 if key in data:
-                    self.state[key] = data[key]
-                    if key in ["antennaAzimuth", "antennaElevation"]:
-                        print(f"Updated {key} to {data[key]}", file=sys.stderr)
+                    self.gs_state[key] = data[key]
+
+            # Update satellite specific data
+            for key in ["latitude", "longitude", "elevation", "azimuth",
+                       "strength", "doppler", "heading", "range", "velocity"]:
+                if key in data:
+                    self.states[sat_idx][key] = data[key]
             
             self._update_pending = True
             
         except Exception as e:
-            print(f"Error processing message: {e}", file=sys.stderr)
+            print(f"Error processing message for satellite {sat_idx}: {e}", file=sys.stderr)
 
     def _process_update(self):
         """Timer-based GUI update handler"""
@@ -238,43 +260,38 @@ class position_visualizer(gr.sync_block):
 
     def _update_gui(self):
         """Update all GUI elements with current state"""
-        # Calculate Doppler details
-        doppler = self.state['doppler']
-        doppler_pct = (doppler - 1.0) * 100
-        base_freq = 137.1e6  # 137.1 MHz for NOAA satellites
-        freq_offset = (doppler - 1.0) * base_freq
-        
-        # Update Doppler information
-        self.doppler_label.setText(
-            f"Raw Shift: {doppler:.6f}")
-        self.doppler_pct_label.setText(
-            f"Percentage: {doppler_pct:+.4f}%")
-        self.doppler_hz_label.setText(
-            f"Frequency Offset: {freq_offset/1000:+.2f} kHz")
+        try:
+            # Update ground station info
+            self.gs_pos_label.setText(
+                f"Position: {self.gs_state['antennaLat']:.3f}°N, {self.gs_state['antennaLon']:.3f}°E")
+            self.gs_alt_label.setText(
+                f"Altitude: {self.gs_state['antennaAlt']:.1f}m")
+            self.gs_az_label.setText(
+                f"Azimuth: {self.gs_state['antennaAzimuth']:.1f}°")
+            self.gs_el_label.setText(
+                f"Elevation: {self.gs_state['antennaElevation']:.1f}°")
             
-        # Update position and signal information
-        self.sat_pos_label.setText(
-            f"Satellite Position: {self.state['latitude']:.3f}°N, {self.state['longitude']:.3f}°E")
-        self.gs_pos_label.setText(
-            f"Ground Station: {self.state['antennaLat']:.3f}°N, {self.state['antennaLon']:.3f}°E")
-        self.gs_alt_label.setText(
-            f"Ground Station Altitude: {self.state['antennaAlt']:.1f}m")
-        self.signal_label.setText(
-            f"Signal Strength: {self.state['strength']*100:.1f}%")
-        self.elevation_label.setText(
-            f"Elevation: {self.state['elevation']:.2f}°")
-        self.azimuth_label.setText(
-            f"Azimuth: {self.state['azimuth']:.2f}°")
-        self.distance_label.setText(
-            f"Distance: {self.state['range']:.1f} km")
-        self.velocity_label.setText(
-            f"Radial Velocity: {self.state['velocity']:.2f} km/s")
-        
-        # Update status
-        self.status_label.setStyleSheet("color: green;")
-        
-        # Schedule grid update
-        self.grid_frame.update()
+            # Update each satellite's info
+            for sat_idx, state in self.states.items():
+                frame = self.sat_frames[sat_idx]
+                frame['pos_label'].setText(
+                    f"Position: {state['latitude']:.3f}°N, {state['longitude']:.3f}°E")
+                frame['elevation_label'].setText(
+                    f"Elevation: {state['elevation']:.1f}°")
+                frame['azimuth_label'].setText(
+                    f"Azimuth: {state['azimuth']:.1f}°")
+                frame['doppler_label'].setText(
+                    f"Doppler: {state['doppler']:.6f}")
+                frame['range_label'].setText(
+                    f"Range: {state['range']:.1f}km")
+                frame['strength_label'].setText(
+                    f"Signal: {state['strength']*100:.1f}%")
+            
+            # Schedule grid update
+            self.grid_frame.update()
+            
+        except Exception as e:
+            print(f"Error updating GUI: {e}", file=sys.stderr)
 
     def paint_grid(self, event):
         """Paint the world map grid with satellite and ground station positions"""
@@ -309,7 +326,7 @@ class position_visualizer(gr.sync_block):
             visible_top = max(-90, 90 - (((-self.pan_y) / self.zoom_level) / height * 180))
             visible_bottom = min(90, 90 - ((height - self.pan_y) / self.zoom_level / height * 180))
             
-# Draw grid lines
+            # Draw grid lines
             grid_spacing = max(1, int(5 / self.zoom_level))
             
             painter.setPen(Qt.QPen(Qt.QColor(200, 200, 200, 100)))
@@ -344,21 +361,17 @@ class position_visualizer(gr.sync_block):
 
             def draw_direction_arrow(x, y, azimuth, elevation, color, label_text, is_antenna=False):
                 """Draw an arrow indicating direction with label"""
-                # Convert azimuth to screen coordinates (north=0° clockwise)
                 angle_rad = (90 - azimuth) * np.pi / 180
                 
                 # Adjust arrow length based on elevation
                 arrow_length = 30 * np.cos(elevation * np.pi / 180)
                 
-                # Calculate arrow endpoint
                 end_x = int(x + arrow_length * np.cos(angle_rad))
                 end_y = int(y - arrow_length * np.sin(angle_rad))
                 
-                # Draw arrow line
                 painter.setPen(Qt.QPen(color, 2))
                 painter.drawLine(x, y, end_x, end_y)
                 
-                # Position label above or below based on type
                 label_y = y + 20 if is_antenna else y - 20
                 
                 # Draw label background and text
@@ -368,7 +381,6 @@ class position_visualizer(gr.sync_block):
                 total_width = max(rect.width() for rect in text_rects)
                 total_height = sum(rect.height() for rect in text_rects)
 
-                # Create background rect with some padding
                 background_rect = Qt.QRectF(
                     x - total_width/2 - 5,
                     label_y - total_height/2 - 2,
@@ -376,18 +388,15 @@ class position_visualizer(gr.sync_block):
                     total_height + 4
                 )
 
-                # Set a smaller font size for labels
                 font = painter.font()
-                font.setPointSize(8)  # 小さめのフォントサイズに設定
+                font.setPointSize(8)
                 painter.setFont(font)
 
-                # Draw semi-transparent background
                 painter.setPen(Qt.Qt.NoPen)
-                bg_color = Qt.QColor(255, 255, 255, 180)  # より透明な背景
+                bg_color = Qt.QColor(255, 255, 255, 180)
                 painter.setBrush(Qt.QBrush(bg_color))
-                painter.drawRoundedRect(background_rect, 3, 3)  # 角を丸くする
+                painter.drawRoundedRect(background_rect, 3, 3)
 
-                # Draw text lines
                 painter.setPen(color)
                 current_y = label_y - total_height/2
                 for line in label_lines:
@@ -401,8 +410,8 @@ class position_visualizer(gr.sync_block):
                 
                 # Draw arrow head
                 arrow_head_size = 10
-                angle1 = angle_rad + np.pi * 0.875  # -45°
-                angle2 = angle_rad - np.pi * 0.875  # +45°
+                angle1 = angle_rad + np.pi * 0.875
+                angle2 = angle_rad - np.pi * 0.875
                 
                 points = [
                     Qt.QPoint(end_x, end_y),
@@ -417,7 +426,8 @@ class position_visualizer(gr.sync_block):
                 painter.drawPolygon(Qt.QPolygon(points))
 
             # Draw ground station
-            gs_x, gs_y = coord_to_pixels(self.state['antennaLat'], self.state['antennaLon'])
+            gs_x, gs_y = coord_to_pixels(self.gs_state['antennaLat'], 
+                                       self.gs_state['antennaLon'])
             
             # Ground station highlight circle
             painter.setPen(Qt.QPen(Qt.QColor(0, 0, 255, 40)))
@@ -426,46 +436,56 @@ class position_visualizer(gr.sync_block):
             
             # Draw antenna direction arrow
             draw_direction_arrow(gs_x, gs_y, 
-                            self.state['antennaAzimuth'],
-                            self.state['antennaElevation'],
+                            self.gs_state['antennaAzimuth'],
+                            self.gs_state['antennaElevation'],
                             Qt.QColor(0, 0, 255),
-                            f"GS: {self.state['antennaLat']:.3f}°N, {self.state['antennaLon']:.3f}°E\n"
-                            f"Az: {self.state['antennaAzimuth']:.1f}° El: {self.state['antennaElevation']:.1f}°",
+                            f"Ground Station\n"
+                            f"{self.gs_state['antennaLat']:.3f}°N, "
+                            f"{self.gs_state['antennaLon']:.3f}°E\n"
+                            f"El: {self.gs_state['antennaElevation']:.1f}°",
                             True)
             
             # Ground station range circle (for visibility)
-            horizon_range = int(np.sqrt(2 * EARTH_RADIUS * (self.state['antennaAlt'] / 1000.0)))
+            horizon_range = int(np.sqrt(2 * EARTH_RADIUS * 
+                              (self.gs_state['antennaAlt'] / 1000.0)))
             if horizon_range > 0:
                 painter.setPen(Qt.QPen(Qt.QColor(0, 0, 255, 30)))
                 painter.setBrush(Qt.QBrush(Qt.QColor(0, 0, 255, 10)))
                 pixel_range = horizon_range * scaled_width / (2 * np.pi * EARTH_RADIUS)
-                painter.drawEllipse(Qt.QPointF(gs_x, gs_y), pixel_range, pixel_range * np.cos(self.state['antennaLat'] * np.pi / 180))
+                painter.drawEllipse(Qt.QPointF(gs_x, gs_y), 
+                                  pixel_range, 
+                                  pixel_range * np.cos(self.gs_state['antennaLat'] * np.pi / 180))
             
             # Ground station marker
             painter.setPen(Qt.QPen(Qt.QColor(0, 0, 255), 2))
             painter.setBrush(Qt.QBrush(Qt.QColor(0, 0, 255, 180)))
             painter.drawEllipse(Qt.QPointF(gs_x, gs_y), 4, 4)
             
-            # Draw satellite
-            sat_x, sat_y = coord_to_pixels(self.state['latitude'], self.state['longitude'])
-            
-            # Satellite highlight circle
-            painter.setPen(Qt.QPen(Qt.QColor(255, 0, 0, 40)))
-            painter.setBrush(Qt.QBrush(Qt.QColor(255, 0, 0, 20)))
-            painter.drawEllipse(Qt.QPointF(sat_x, sat_y), 15, 15)
-            
-            # Draw satellite direction arrow
-            heading = self.state.get('heading', 0.0)
-            draw_direction_arrow(sat_x, sat_y,
-                            heading, 0,
-                            Qt.QColor(255, 0, 0),
-                            f"Sat: {self.state['latitude']:.3f}°N, {self.state['longitude']:.3f}°E\n"
-                            f"Heading: {heading:.1f}°")
-            
-            # Satellite marker
-            painter.setPen(Qt.QPen(Qt.QColor(255, 0, 0), 2))
-            painter.setBrush(Qt.QBrush(Qt.QColor(255, 0, 0, 180)))
-            painter.drawEllipse(Qt.QPointF(sat_x, sat_y), 4, 4)
+            # Draw each satellite
+            for sat_idx, state in self.states.items():
+                sat_x, sat_y = coord_to_pixels(state['latitude'], state['longitude'])
+                color = state['color']
+                
+                # Satellite highlight circle
+                painter.setPen(Qt.QPen(Qt.QColor(color.red(), color.green(), 
+                                               color.blue(), 40)))
+                painter.setBrush(Qt.QBrush(Qt.QColor(color.red(), color.green(), 
+                                                   color.blue(), 20)))
+                painter.drawEllipse(Qt.QPointF(sat_x, sat_y), 15, 15)
+                
+                # Draw satellite direction arrow
+                draw_direction_arrow(sat_x, sat_y,
+                                state['heading'], 0,
+                                color,
+                                f"{state['name']}\n"
+                                f"El: {state['elevation']:.1f}°\n"
+                                f"Az: {state['azimuth']:.1f}°\n"
+                                f"Signal: {state['strength']*100:.0f}%")
+                
+                # Satellite marker
+                painter.setPen(Qt.QPen(color, 2))
+                painter.setBrush(Qt.QBrush(color))
+                painter.drawEllipse(Qt.QPointF(sat_x, sat_y), 4, 4)
             
         except Exception as e:
             print(f"Error in paint event: {e}", file=sys.stderr)

@@ -1,0 +1,179 @@
+id: apt_encoder_doppler_simulator_sgp4
+label: APT Doppler Simulator (SGP4)
+category: '[APT Encoder]'
+
+parameters:
+-   id: sample_rate
+    label: Sample Rate
+    dtype: float
+    default: '24000'
+
+-   id: center_freq
+    label: Center Frequency
+    dtype: float
+    default: '2400'
+
+-   id: nickname
+    label: Display Name
+    dtype: string
+    default: 'NOAA-19'
+    category: Satellite
+
+-   id: satellite
+    label: TLE Preset
+    dtype: enum
+    options: ['"NOAA15"', '"NOAA18"', '"NOAA19"', '"CUSTOM"']
+    option_labels: [NOAA-15, NOAA-18, NOAA-19, Custom]
+    default: '"NOAA19"'
+    category: Satellite
+
+-   id: tle_line1
+    label: TLE Line 1
+    dtype: string
+    default: '1 33591U 09005A   24018.50000000  .00000045  00000-0  51014-4 0  9990'
+    category: Satellite
+    hide: ${ 'none' if satellite == '"CUSTOM"' else 'all' }
+    
+-   id: tle_line2
+    label: TLE Line 2
+    dtype: string
+    default: '2 33591  98.7904 312.5878 0013594 111.9829 248.2634 14.12501932766033'
+    category: Satellite
+    hide: ${ 'none' if satellite == '"CUSTOM"' else 'all' }
+
+-   id: antenna_type
+    label: Antenna Type
+    dtype: enum
+    options: ['"OMNI"', '"DIPOLE"', '"DOUBLE_CROSS"', '"QFH"', '"TURNSTILE"']
+    option_labels: [Omnidirectional, Dipole, Double Cross, QFH, Turnstile]
+    default: '"OMNI"'
+    category: Antenna
+
+-   id: antenna_azimuth
+    label: Antenna Azimuth (deg)
+    dtype: float
+    default: '90'
+    category: Antenna
+    
+-   id: antenna_elevation
+    label: Antenna Elevation (deg)
+    dtype: float
+    default: '10'
+    category: Antenna
+    
+-   id: antenna_lat
+    label: Ground Station Latitude (deg)
+    dtype: float
+    default: '37.81'
+    category: Ground Station
+    
+-   id: antenna_lon
+    label: Ground Station Longitude (deg)
+    dtype: float
+    default: '139.11'
+    category: Ground Station
+    
+-   id: antenna_alt
+    label: Ground Station Altitude (m)
+    dtype: float
+    default: '10'
+    category: Ground Station
+
+inputs:
+-   domain: stream
+    dtype: float
+    vlen: 1
+    optional: true
+
+outputs:
+-   domain: stream
+    dtype: float
+    vlen: 1
+    optional: false
+-   domain: message
+    id: sat_pos
+    optional: true
+
+templates:
+    imports: |
+        from gnuradio import apt_encoder
+        import sys
+
+    make: |
+        self.tle_data = {
+            'NOAA15': (
+                '1 25338U 98030A   24018.48630787  .00000037  00000-0  43452-4 0  9995',
+                '2 25338  98.7207 317.1771 0010879  92.2065 268.0336 14.25953630336352'
+            ),
+            'NOAA18': (
+                '1 28654U 05018A   24018.49098981  .00000038  00000-0  44164-4 0  9992',
+                '2 28654  99.0432 314.9201 0015048  94.5507 265.7464 14.12526144962669'
+            ),
+            'NOAA19': (
+                '1 33591U 09005A   24018.50000000  .00000045  00000-0  51014-4 0  9990',
+                '2 33591  98.7904 312.5878 0013594 111.9829 248.2634 14.12501932766033'
+            )
+        }
+
+        if ${satellite} == 'CUSTOM':
+            tle_line1 = ${tle_line1}
+            tle_line2 = ${tle_line2}
+        else:
+            tle_line1, tle_line2 = self.tle_data[${satellite}]
+        
+        print(f"Initializing APT Doppler Simulator (SGP4) - {${nickname}}:", file=sys.stderr)
+        print(f"  Ground Station: {${antenna_lat}}°N, {${antenna_lon}}°E, Alt: {${antenna_alt}}m", file=sys.stderr)
+        print(f"  Antenna: Type={${antenna_type}}, Az={${antenna_azimuth}}°, El={${antenna_elevation}}°", file=sys.stderr)
+        print(f"  TLE: {'Custom' if ${satellite} == 'CUSTOM' else ${satellite}}", file=sys.stderr)
+
+        self.${id} = apt_encoder.doppler_simulator_sgp4.make(
+            ${sample_rate},
+            ${center_freq},
+            tle_line1,
+            tle_line2,
+            ${antenna_lat},
+            ${antenna_lon},
+            ${antenna_alt}
+        )
+        self.${id}.set_antenna_type(getattr(apt_encoder.AntennaType, ${antenna_type}))
+        self.${id}.set_antenna_orientation(${antenna_azimuth}, ${antenna_elevation})
+
+    callbacks:
+    - |
+        self.${id}.set_antenna_position(${antenna_lat}, ${antenna_lon}, ${antenna_alt})
+    - |
+        self.${id}.set_antenna_type(getattr(apt_encoder.AntennaType, ${antenna_type}))
+    - |
+        self.${id}.set_antenna_orientation(${antenna_azimuth}, ${antenna_elevation})
+    - |
+        if ${satellite} == 'CUSTOM':
+            self.${id}.set_tle(${tle_line1}, ${tle_line2})
+        else:
+            tle_line1, tle_line2 = self.tle_data[${satellite}]
+            self.${id}.set_tle(tle_line1, tle_line2)
+
+documentation: |-
+    SGP4 Orbital Model Doppler Effect Simulator
+
+    Simulates Doppler effect and antenna patterns based on accurate 
+    satellite orbit calculations using the SGP4 propagator model and 
+    Two-Line Element (TLE) data.
+    
+    Parameters:
+    * Sample Rate: Must match APT Encoder (typically 24000 Hz)
+    * Center Freq: Carrier frequency from APT Encoder (typically 2400 Hz)
+    * Display Name: Custom name for this satellite instance
+    * TLE Preset: Select NOAA satellite or use custom TLE
+    * Custom TLE: Enable to input custom TLE data
+    
+    Ground Station Parameters:
+    * Latitude: Ground station latitude (-90° to 90°)
+    * Longitude: Ground station longitude (-180° to 180°)
+    * Altitude: Height above sea level (-500m to 9000m)
+    
+    Antenna Parameters:
+    * Type: Antenna radiation pattern model
+    * Azimuth: Antenna pointing direction (0° to 360° from North)
+    * Elevation: Antenna tilt angle (-90° to 90° from horizontal)
+
+file_format: 1
